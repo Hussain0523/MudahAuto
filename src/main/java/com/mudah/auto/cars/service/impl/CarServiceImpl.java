@@ -205,7 +205,6 @@ public class CarServiceImpl implements CarService {
         });
     }
 
-
     @Override
     public Mono<Object> getCarListsMultiFilter(String accessToken, FilterGroup filterGroup) throws Exception {
         String url = "https://crm.zoho.com/crm/v2.1/Inventories/bulk";

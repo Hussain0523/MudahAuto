@@ -59,7 +59,7 @@ public class GoogleServiceImpl {
                     .setPageToken(pageToken)
                     .execute();
             for (File file : result.getFiles()) {
-                if (file.getName().toLowerCase().startsWith("edited")) {
+                if (isEditedFolder(file.getName()) || isFolderWithoutEdited(file.getName())) {
                     imageFiles.addAll(getImagesInFolder(service, file.getId()));
                     break;
                 }
@@ -67,6 +67,22 @@ public class GoogleServiceImpl {
             pageToken = result.getNextPageToken();
         } while (pageToken != null);
         return imageFiles;
+    }
+
+    private boolean isEditedFolder(String folderName) {
+        String lowerFolderName = folderName.toLowerCase();
+        return lowerFolderName.startsWith("edited") ||
+                lowerFolderName.startsWith("edited - ") ||
+                lowerFolderName.contains(" edited") ||
+                lowerFolderName.endsWith(" - edited") ||
+                lowerFolderName.endsWith("edited") ||
+                lowerFolderName.endsWith(" edited") ||
+                lowerFolderName.matches(".*\\b(edited)\\b.*");
+    }
+
+    private boolean isFolderWithoutEdited(String folderName) {
+        String lowerFolderName = folderName.toLowerCase();
+        return !lowerFolderName.contains("edited");
     }
 
     private List<File> getImagesInFolder(Drive service, String folderId) throws IOException {
