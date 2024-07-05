@@ -11,6 +11,6 @@ import java.util.Map;
 public class CarListingResponse {
 
     private Map<String, Object> carDetails;
-    private List<String> imageURLs;
+    private List<String> imageUrls;
 
 }

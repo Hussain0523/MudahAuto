@@ -56,24 +56,52 @@ public class CarServiceImpl implements CarService {
             if (response.statusCode() == 200) {
                 Map<String, Object> carDetails = objectMapper.readValue(response.body(), Map.class);
                 List<Map<String, Object>> data = (List<Map<String, Object>>) carDetails.get("data");
+                HashMap<String, String> hashMap = new HashMap<>();
+                hashMap.put("5741151000001402995", "5741151000001402995");
+                hashMap.put("5741151000006366228", "5741151000006366228");
+                hashMap.put("5741151000008823014", "5741151000008823014");
+                hashMap.put("5741151000009020281", "5741151000009020281");
+                hashMap.put("5741151000009320063", "5741151000009320063");
+                hashMap.put("5741151000015258386", "5741151000015258386");
+                hashMap.put("5741151000019764378", "5741151000019764378");
+                hashMap.put("5741151000021696078", "5741151000021696078");
+                hashMap.put("5741151000022850752", "5741151000022850752");
 
-                List<CarListingResponse> carListingResponses = new ArrayList<>();
+                List<CarListingResponse> matchingCarListings = new ArrayList<>();
+                List<CarListingResponse> nonMatchingCarListings = new ArrayList<>();
+
                 for (Map<String, Object> carData : data) {
-                    String photoUrl = (String) carData.get("Photo_URL");
-                    if (photoUrl != null && !photoUrl.isEmpty()) {
-                        String folderId = extractFolderIdFromUrl(photoUrl);
+                    String id = (String) carData.get("id");
+                    if (hashMap.containsKey(id)) {
+                        String photoUrl = (String) carData.get("Photo_URL");
+                        if (photoUrl != null && !photoUrl.isEmpty()) {
+                            String folderId = extractFolderIdFromUrl(photoUrl);
 
-                        List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
-                        List<String> imageUrls = new ArrayList<>();
-                        for (com.google.api.services.drive.model.File file : imageFiles) {
-                            imageUrls.add(file.getWebViewLink());
+                            List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
+                            List<String> imageUrls = new ArrayList<>();
+                            List<String> otherImageUrls = new ArrayList<>();
+
+                            for (com.google.api.services.drive.model.File file : imageFiles) {
+                                String webViewLink = file.getWebViewLink();
+                                if (isPredefinedUrl(webViewLink)) {
+                                    imageUrls.add(webViewLink);
+                                } else {
+                                    otherImageUrls.add(webViewLink);
+                                }
+                            }
+                            imageUrls.addAll(imageUrls.size(), otherImageUrls);
+
+                            matchingCarListings.add(new CarListingResponse(carData, imageUrls));
+                        } else {
+                            matchingCarListings.add(new CarListingResponse(carData, new ArrayList<>()));
                         }
-
-                        carListingResponses.add(new CarListingResponse(carData, imageUrls));
                     } else {
-                        carListingResponses.add(new CarListingResponse(carData, new ArrayList<>()));
+                        nonMatchingCarListings.add(new CarListingResponse(carData, new ArrayList<>()));
                     }
                 }
+
+                List<CarListingResponse> carListingResponses = new ArrayList<>(matchingCarListings);
+                carListingResponses.addAll(nonMatchingCarListings);
 
                 return carListingResponses;
             } else {
@@ -81,6 +109,7 @@ public class CarServiceImpl implements CarService {
             }
         });
     }
+
 
     @Override
     public Mono<CarListingResponse> getCarDetails(String id, String accessToken) {
@@ -106,9 +135,17 @@ public class CarServiceImpl implements CarService {
 
                     List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
                     List<String> imageUrls = new ArrayList<>();
+                    List<String> otherImageUrls = new ArrayList<>();
+
                     for (com.google.api.services.drive.model.File file : imageFiles) {
-                        imageUrls.add(file.getWebViewLink());
+                        String webViewLink = file.getWebViewLink();
+                        if (isPredefinedUrl(webViewLink)) {
+                            imageUrls.add(webViewLink);
+                        } else {
+                            otherImageUrls.add(webViewLink);
+                        }
                     }
+                    imageUrls.addAll(imageUrls.size(), otherImageUrls);
 
                     log.info("Successfully fetched car details and image URLs for id: {}", id);
                     return new CarListingResponse(carData, imageUrls);
@@ -170,20 +207,40 @@ public class CarServiceImpl implements CarService {
                 if (response.statusCode() == 200) {
                     Map<String, Object> jsonResponse = objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
                     List<Map<String, Object>> data = (List<Map<String, Object>>) jsonResponse.get("data");
-
+                    HashMap<String, String> hashMap = new HashMap<>();
+                    hashMap.put("5741151000001402995","5741151000001402995");
+                    hashMap.put("5741151000006366228","5741151000006366228");
+                    hashMap.put("5741151000008823014","5741151000008823014");
+                    hashMap.put("5741151000009020281","5741151000009020281");
+                    hashMap.put("5741151000009320063","5741151000009320063");
+                    hashMap.put("5741151000015258386","5741151000015258386");
+                    hashMap.put("5741151000019764378","5741151000019764378");
+                    hashMap.put("5741151000021696078","5741151000021696078");
+                    hashMap.put("5741151000022850752","5741151000022850752");
                     List<CarListingResponse> carListings = new ArrayList<>();
                     for (Map<String, Object> carData : data) {
+                        String id= (String) carData.get("id");
                         String photoUrl = (String) carData.get("Photo_URL");
-                        if (photoUrl != null && !photoUrl.isEmpty()) {
-                            String folderId = extractFolderIdFromUrl(photoUrl);
-                            List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
-                            List<String> imageUrls = new ArrayList<>();
-                            for (com.google.api.services.drive.model.File file : imageFiles) {
-                                imageUrls.add(file.getWebViewLink());
+                        if(hashMap.get(id)!=null) {
+                            if (photoUrl != null && !photoUrl.isEmpty()) {
+                                String folderId = extractFolderIdFromUrl(photoUrl);
+                                List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
+                                List<String> imageUrls = new ArrayList<>();
+                                List<String> otherImageUrls = new ArrayList<>();
+
+                                for (com.google.api.services.drive.model.File file : imageFiles) {
+                                    String webViewLink = file.getWebViewLink();
+                                    if (isPredefinedUrl(webViewLink)) {
+                                        imageUrls.add(webViewLink);
+                                    } else {
+                                        otherImageUrls.add(webViewLink);
+                                    }
+                                }
+                                imageUrls.addAll(imageUrls.size(), otherImageUrls);
+                                carListings.add(new CarListingResponse(carData, imageUrls));
+                            } else {
+                                log.warn("No photo URL found in car data");
                             }
-                            carListings.add(new CarListingResponse(carData, imageUrls));
-                        } else {
-                            log.warn("No photo URL found in car data");
                         }
                     }
 
@@ -225,27 +282,56 @@ public class CarServiceImpl implements CarService {
                 if (response.statusCode() == 200) {
                     Map<String, Object> jsonResponse = objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
                     List<Map<String, Object>> data = (List<Map<String, Object>>) jsonResponse.get("data");
+                    HashMap<String, String> hashMap = new HashMap<>();
+                    hashMap.put("5741151000001402995", "5741151000001402995");
+                    hashMap.put("5741151000006366228", "5741151000006366228");
+                    hashMap.put("5741151000008823014", "5741151000008823014");
+                    hashMap.put("5741151000009020281", "5741151000009020281");
+                    hashMap.put("5741151000009320063", "5741151000009320063");
+                    hashMap.put("5741151000015258386", "5741151000015258386");
+                    hashMap.put("5741151000019764378", "5741151000019764378");
+                    hashMap.put("5741151000021696078", "5741151000021696078");
+                    hashMap.put("5741151000022850752", "5741151000022850752");
 
-                    List<CarListingResponse> carListings = new ArrayList<>();
+                    List<CarListingResponse> matchingCarListings = new ArrayList<>();
+                    List<CarListingResponse> nonMatchingCarListings = new ArrayList<>();
+
                     for (Map<String, Object> carData : data) {
+                        String id = (String) carData.get("id");
                         String photoUrl = (String) carData.get("Photo_URL");
-                        if (photoUrl != null && !photoUrl.isEmpty()) {
-                            String folderId = extractFolderIdFromUrl(photoUrl);
-                            List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
-                            List<String> imageUrls = new ArrayList<>();
-                            for (com.google.api.services.drive.model.File file : imageFiles) {
-                                imageUrls.add(file.getWebViewLink());
+
+                        if (hashMap.containsKey(id)) {
+                            if (photoUrl != null && !photoUrl.isEmpty()) {
+                                String folderId = extractFolderIdFromUrl(photoUrl);
+                                List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
+                                List<String> imageUrls = new ArrayList<>();
+                                List<String> otherImageUrls = new ArrayList<>();
+
+                                for (com.google.api.services.drive.model.File file : imageFiles) {
+                                    String webViewLink = file.getWebViewLink();
+                                    if (isPredefinedUrl(webViewLink)) {
+                                        imageUrls.add(webViewLink);
+                                    } else {
+                                        otherImageUrls.add(webViewLink);
+                                    }
+                                }
+                                imageUrls.addAll(imageUrls.size(), otherImageUrls);
+                                matchingCarListings.add(new CarListingResponse(carData, imageUrls));
+                            } else {
+                                log.warn("No photo URL found in car data");
                             }
-                            carListings.add(new CarListingResponse(carData, imageUrls));
                         } else {
-                            log.warn("No photo URL found in car data");
+                            nonMatchingCarListings.add(new CarListingResponse(carData, new ArrayList<>()));
                         }
                     }
 
-                    if (carListings.isEmpty()) {
+                    if (matchingCarListings.isEmpty() && nonMatchingCarListings.isEmpty()) {
                         log.warn("No car data found in response");
                         throw new RuntimeException("No car data found in response");
                     }
+
+                    List<CarListingResponse> carListings = new ArrayList<>(matchingCarListings);
+                    carListings.addAll(nonMatchingCarListings);
 
                     log.info("Successfully fetched {} car listings", carListings.size());
                     return carListings;
@@ -254,11 +340,14 @@ public class CarServiceImpl implements CarService {
                     throw new RuntimeException("Failed to fetch data. Status code: " + response.statusCode());
                 }
             } catch (IOException | InterruptedException e) {
-                LoggerFactory.getLogger(this.getClass()).error("HTTP request failed", e);
-                throw new RuntimeException("Failed to send HTTP request", e);
+                String errorMessage = "Failed to send HTTP request";
+                LoggerFactory.getLogger(this.getClass()).error(errorMessage, e);
+                // You can rethrow the caught exception with a more descriptive RuntimeException
+                throw new RuntimeException(errorMessage, e);
             }
         });
     }
+
 
     private String prepareFiltersParameter(FilterGroup filterGroup) throws Exception {
         FilterGroup newFilterGroup = new FilterGroup();
@@ -279,5 +368,48 @@ public class CarServiceImpl implements CarService {
         return URLEncoder.encode(json, StandardCharsets.UTF_8);
     }
 
+    private boolean isPredefinedUrl(String url) {
+        Set<String> predefinedUrls = new HashSet<>(Arrays.asList(
+                "https://drive.google.com/file/d/1BVCemUfgPlz3kLF42vqLiEuIohA_ETbW/view?usp=drivesdk",
+                "https://drive.google.com/file/d/134NvO5G1hXwMoRgWRNuY2TQh9yeAUSKw/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1XMRhhYXIL0rtgzWlp3UWchkdY8SeoYhW/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1CVtSw5dPOQ-Ot7a-j8ykGDTkAJCSv6Bf/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1JaqSV-S11zGq2SdJH3I_v8HWIyNXwi9g/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1glXEY2Y5MXoKf6uHYrKS0O3rGdCsWchO/view?usp=drivesdk",
+                "https://drive.google.com/file/d/159vbFADpUSlGl9qTPbel6fzH9kkBOVkx/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1CxnTCw0DWIeH3S7UYduxs0UjguBlqC9G/view?usp=drivesdk",
+                "https://drive.google.com/file/d/12kI0raDiV4x2-ipJpdsgr33sgMHgsqFD/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1zHAm5lKwIhhkfh0I1XuDMy0LvEyH5oNs/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1-wZEpwdCfhFwDxy0dyYqJvlsguPI0pKE/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1UFIXtR55QiRxurtsrUfvzOhONfIIObOs/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1doz4E8zpPoAQ4czidOxs3OtocSgvBg_V/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1noN4mTHg0wTO0TRlH0CQwdjMpG43MQ0a/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1ZTguObBHC4dfO2MBEbKdjFS8utmP13n5/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1Em2S52JiThb92sosLp8Z5h54T0TFpUDd/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1u5rCJoxF7FGvVL_45G8_I_4ti1Jt2bUb/view?usp=drivesdk",
+                "https://drive.google.com/file/d/16GA5wP3EIcX2GMOSI7N4A49CQB9QtPvx/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1t6EGB1LCmwzGD8_niFpbbiqJc5fRjqm7/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1-AS78WVqYCOoPfZWOkg13SjiuZDBxqLx/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1NvJV7X0RPztP8RukENG40rUdn15-hDmV/view?usp=drivesdk",
+                "https://drive.google.com/file/d/10l3jdGjJtJS3_lVmaI8NJ92zXBeFPSJ9/view?usp=drivesdk",
+                "https://drive.google.com/file/d/102yCxwxQnozLO76nZEGM488QR5VpIGwb/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1jB5D39tVSnBNIiFJcDWtQaKzob9zHDBe/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1kEWiHYAjnRMSDCw9zClC_348JyalzvyP/view?usp=drivesdk",
+                "https://drive.google.com/file/d/17rM8zQn9WhMi7cI4Gao73tkaX6l3XfeD/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1hICgBJK6_Ct1nFh4Ysmh_ZiGNQjo7NU8/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1Papj9tdg1DV86WXixhj403BnoAGnhiJf/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1bp-y4tcyIBNCcMQUnziVTpoosgQFHzxi/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1_F-b6T_ZQU3ehRKKTWVSiFf69AsQLaWO/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1b3qsxI9l9FlZ2xTGw_cpw9fSODIzo6up/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1DLPP5KRkZSscTAfrsK6PB8lK4pgqVbBg/view?usp=drivesdk",
+                "https://drive.google.com/file/d/18biQ0orskYT_rflpvFR205012RkLk3sX/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1uT5EAAVNIyr8irl-uaSpLcaQkEk4HBf9/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1lPEY3seVbTYLJ7cb1HSDK6_93CvxVR_r/view?usp=drivesdk",
+                "https://drive.google.com/file/d/10qiIwy-86lVg2Eg4PqBMwcINr5lXFiEi/view?usp=drivesdk",
+                "https://drive.google.com/file/d/1_vK-v9qLWtFMbgj3-8zhNATF2V3VkAh7/view?usp=drivesdk"
+        ));
+
+        return predefinedUrls.contains(url);
+    }
 }
 
