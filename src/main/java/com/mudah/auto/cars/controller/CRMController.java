@@ -62,4 +62,18 @@ public class CRMController {
                 });
     }
 
+    @PostMapping("/carListsWithoutImages")
+    public Mono<ResponseEntity<List<CarListingResponse>>> getCarListsWithoutImages(@RequestParam String accessToken) {
+        return carService.getCarListsWithoutImages(accessToken)
+                .map(carLists -> ResponseEntity.ok(carLists))
+                .onErrorReturn(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
+    }
+
+    @PostMapping("/carImages")
+    public Mono<ResponseEntity<List<String>>> getCarImages(@RequestParam List<String> photoUrls) {
+        return carService.getCarImages(photoUrls)
+                .map(imageUrls -> ResponseEntity.ok(imageUrls))
+                .onErrorReturn(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
+    }
+
 }

@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.io.IOException;
@@ -25,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -346,6 +348,96 @@ public class CarServiceImpl implements CarService {
                 throw new RuntimeException(errorMessage, e);
             }
         });
+    }
+
+    @Override
+    public Mono<List<CarListingResponse>> getCarListsWithoutImages(String accessToken) {
+        String url = "https://crm.zoho.com/crm/v2.2/Inventories/bulk?";
+
+        return Mono.fromCallable(() -> {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Zoho-oauthtoken " + accessToken)
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .build();
+
+            HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                Map<String, Object> carDetails = objectMapper.readValue(response.body(), Map.class);
+                List<Map<String, Object>> data = (List<Map<String, Object>>) carDetails.get("data");
+
+                // IDs to prioritize
+                Set<String> prioritizedIds = new HashSet<>(Arrays.asList(
+                        "5741151000001402995", "5741151000006366228", "5741151000008823014",
+                        "5741151000009020281", "5741151000009320063", "5741151000015258386",
+                        "5741151000019764378", "5741151000021696078", "5741151000022850752"
+                ));
+
+                List<CarListingResponse> prioritizedCarListings = new ArrayList<>();
+                List<CarListingResponse> otherCarListings = new ArrayList<>();
+
+                for (Map<String, Object> carData : data) {
+                    String id = (String) carData.get("id");
+                    CarListingResponse carListingResponse = new CarListingResponse(carData, new ArrayList<>());
+
+                    if (prioritizedIds.contains(id)) {
+                        prioritizedCarListings.add(carListingResponse);
+                    } else {
+                        otherCarListings.add(carListingResponse);
+                    }
+                }
+
+                List<CarListingResponse> carListingResponses = new ArrayList<>(prioritizedCarListings);
+                carListingResponses.addAll(otherCarListings);
+
+                return carListingResponses;
+            } else {
+                throw new RuntimeException("Failed to fetch data. Status code: " + response.statusCode());
+            }
+        });
+    }
+
+
+    @Override
+    public Mono<List<String>> getCarImages(List<String> photoUrls) {
+        return Flux.fromIterable(photoUrls)
+                .flatMap(photoUrl -> {
+                    return Mono.fromCallable(() -> {
+                        List<String> imageUrls = new ArrayList<>();
+
+                        if (photoUrl != null && !photoUrl.isEmpty()) {
+                            try {
+                                String folderId = extractFolderIdFromUrl(photoUrl);
+                                log.info("Extracted folder ID: " + folderId);
+
+                                List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
+                                List<String> predefinedImageUrls = new ArrayList<>();
+                                List<String> otherImageUrls = new ArrayList<>();
+
+                                for (com.google.api.services.drive.model.File file : imageFiles) {
+                                    String webViewLink = file.getWebViewLink();
+                                    if (isPredefinedUrl(webViewLink)) {
+                                        predefinedImageUrls.add(webViewLink);
+                                    } else {
+                                        otherImageUrls.add(webViewLink);
+                                    }
+                                }
+
+                                predefinedImageUrls.addAll(otherImageUrls);
+                                imageUrls.addAll(predefinedImageUrls);
+
+                            } catch (Exception e) {
+                                log.error("Error processing photo URL: " + photoUrl, e);
+                            }
+                        } else {
+                            log.warn("Empty or null photo URL: " + photoUrl);
+                        }
+
+                        return imageUrls;
+                    });
+                })
+                .collectList()  // Collect all lists of imageUrls into a single List<List<String>>
+                .flatMap(imageUrlsList -> Mono.just(imageUrlsList.stream().flatMap(List::stream).collect(Collectors.toList())));
     }
 
 

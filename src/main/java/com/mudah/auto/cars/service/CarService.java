@@ -15,4 +15,8 @@ public interface CarService {
     Mono<Object> getCarListsFilter(String accessToken, String comparator, String apiName, Object value);
 
     Mono<Object> getCarListsMultiFilter(String accessToken, FilterGroup filterGroup) throws Exception;
+
+    Mono<List<CarListingResponse>> getCarListsWithoutImages(String accessToken);
+
+    Mono<List<String>> getCarImages(List<String> photoUrls);
 }
