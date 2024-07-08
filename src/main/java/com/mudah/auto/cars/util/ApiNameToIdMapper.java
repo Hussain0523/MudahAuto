@@ -33,6 +33,8 @@ public class ApiNameToIdMapper {
                 return "5741151000000637610";
             case "Total_Refurbishment_Cost":
                 return "5741151000000655270";
+            case "Current_Location":
+                return "5741151000000647013";
             default:
                 throw new IllegalArgumentException("Invalid api_name: " + apiName);
         }
