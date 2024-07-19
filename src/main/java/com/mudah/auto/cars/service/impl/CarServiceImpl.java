@@ -1,8 +1,8 @@
 package com.mudah.auto.cars.service.impl;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mudah.auto.cars.payload.CarCountResponse;
 import com.mudah.auto.cars.payload.CarListingResponse;
 import com.mudah.auto.cars.service.CarService;
 import com.mudah.auto.cars.service.dto.Field;
@@ -10,7 +10,6 @@ import com.mudah.auto.cars.service.dto.Filter;
 import com.mudah.auto.cars.service.dto.FilterGroup;
 import com.mudah.auto.cars.util.ApiNameToIdMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
@@ -56,62 +55,46 @@ public class CarServiceImpl implements CarService {
 
             HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
+                log.info("Received successful response from Zoho CRM.");
                 Map<String, Object> carDetails = objectMapper.readValue(response.body(), Map.class);
                 List<Map<String, Object>> data = (List<Map<String, Object>>) carDetails.get("data");
-                HashMap<String, String> hashMap = new HashMap<>();
-                hashMap.put("5741151000001402995", "5741151000001402995");
-                hashMap.put("5741151000006366228", "5741151000006366228");
-                hashMap.put("5741151000008823014", "5741151000008823014");
-                hashMap.put("5741151000009020281", "5741151000009020281");
-                hashMap.put("5741151000009320063", "5741151000009320063");
-                hashMap.put("5741151000015258386", "5741151000015258386");
-                hashMap.put("5741151000019764378", "5741151000019764378");
-                hashMap.put("5741151000021696078", "5741151000021696078");
-                hashMap.put("5741151000022850752", "5741151000022850752");
 
-                List<CarListingResponse> matchingCarListings = new ArrayList<>();
-                List<CarListingResponse> nonMatchingCarListings = new ArrayList<>();
+                List<CarListingResponse> carListingResponses = new ArrayList<>();
 
                 for (Map<String, Object> carData : data) {
-                    String id = (String) carData.get("id");
-                    if (hashMap.containsKey(id)) {
-                        String photoUrl = (String) carData.get("Photo_URL");
-                        if (photoUrl != null && !photoUrl.isEmpty()) {
-                            String folderId = extractFolderIdFromUrl(photoUrl);
+                    String photoUrl = (String) carData.get("Photo_URL_for_Reseller");
+                    List<String> imageUrls = new ArrayList<>();
 
+                    if (photoUrl != null && !photoUrl.isEmpty()) {
+                        try {
+                            String folderId = extractFolderIdFromUrl(photoUrl);
                             List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
-                            List<String> imageUrls = new ArrayList<>();
-                            List<String> otherImageUrls = new ArrayList<>();
 
                             for (com.google.api.services.drive.model.File file : imageFiles) {
                                 String webViewLink = file.getWebViewLink();
-                                if (isPredefinedUrl(webViewLink)) {
-                                    imageUrls.add(webViewLink);
-                                } else {
-                                    otherImageUrls.add(webViewLink);
-                                }
+                                imageUrls.add(webViewLink);
                             }
-                            imageUrls.addAll(imageUrls.size(), otherImageUrls);
 
-                            matchingCarListings.add(new CarListingResponse(carData, imageUrls));
-                        } else {
-                            matchingCarListings.add(new CarListingResponse(carData, new ArrayList<>()));
+                            log.debug("Added {} image URLs for folder ID: {}", imageUrls.size(), folderId);
+
+                        } catch (Exception e) {
+                            log.error("Error retrieving images for URL: {}", photoUrl, e);
                         }
                     } else {
-                        nonMatchingCarListings.add(new CarListingResponse(carData, new ArrayList<>()));
+                        log.warn("Empty or null photo URL for car ID: {}", carData.get("id"));
                     }
+
+                    carListingResponses.add(new CarListingResponse(carData, imageUrls));
                 }
 
-                List<CarListingResponse> carListingResponses = new ArrayList<>(matchingCarListings);
-                carListingResponses.addAll(nonMatchingCarListings);
-
+                log.info("Total car listings processed: {}", carListingResponses.size());
                 return carListingResponses;
             } else {
+                log.error("Failed to fetch data. Status code: {}", response.statusCode());
                 throw new RuntimeException("Failed to fetch data. Status code: " + response.statusCode());
             }
         });
     }
-
 
     @Override
     public Mono<CarListingResponse> getCarDetails(String id, String accessToken) {
@@ -119,35 +102,52 @@ public class CarServiceImpl implements CarService {
                 "?approved=both&converted=both&formatted_currency=true&home_converted_currency=true&on_demand_properties=%24client_portal_permission";
 
         return Mono.fromCallable(() -> {
+            log.info("Creating HTTP request to fetch car details for id: {}", id);
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Authorization", "Zoho-oauthtoken " + accessToken)
                     .GET()
                     .build();
 
+            log.info("Sending HTTP request to URL: {}", url);
             HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200) {
-                Map<String, Object> carDetails = objectMapper.readValue(response.body(), Map.class);
+                log.info("Received successful response for id: {}", id);
+                Map<String, Object> carDetails = objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
                 List<Map<String, Object>> data = (List<Map<String, Object>>) carDetails.get("data");
+
                 if (!data.isEmpty()) {
-                    Map<String, Object> carData = data.get(0);
-                    String photoUrl = (String) carData.get("Photo_URL");
-                    String folderId = extractFolderIdFromUrl(photoUrl);
+                    Map<String, Object> carData = data.getFirst();
+                    String photoUrl = (String) carData.get("Photo_URL_for_Reseller");
 
-                    List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
                     List<String> imageUrls = new ArrayList<>();
-                    List<String> otherImageUrls = new ArrayList<>();
+                    if (photoUrl != null && !photoUrl.isEmpty()) {
+                        try {
+                            String folderId = extractFolderIdFromUrl(photoUrl);
+                            log.info("Extracted folder ID: {}", folderId);
 
-                    for (com.google.api.services.drive.model.File file : imageFiles) {
-                        String webViewLink = file.getWebViewLink();
-                        if (isPredefinedUrl(webViewLink)) {
-                            imageUrls.add(webViewLink);
-                        } else {
-                            otherImageUrls.add(webViewLink);
+                            List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
+
+                            if (imageFiles != null && !imageFiles.isEmpty()) {
+                                // Sort files by name
+                                imageFiles.sort(Comparator.comparing(com.google.api.services.drive.model.File::getName));
+
+                                for (com.google.api.services.drive.model.File file : imageFiles) {
+                                    String webViewLink = file.getWebViewLink();
+                                    imageUrls.add(webViewLink);
+                                }
+
+                                log.debug("Added {} image URLs for folder ID: {}", imageUrls.size(), folderId);
+                            } else {
+                                log.warn("No image files found for folder ID: {}", folderId);
+                            }
+                        } catch (Exception e) {
+                            log.error("Error retrieving images for photo URL: {}", photoUrl, e);
                         }
+                    } else {
+                        log.warn("Empty or null photo URL for car ID: {}", id);
                     }
-                    imageUrls.addAll(imageUrls.size(), otherImageUrls);
 
                     log.info("Successfully fetched car details and image URLs for id: {}", id);
                     return new CarListingResponse(carData, imageUrls);
@@ -159,8 +159,9 @@ public class CarServiceImpl implements CarService {
                 log.error("Failed to fetch data for id: {}. Status code: {}", id, response.statusCode());
                 throw new RuntimeException("Failed to fetch data. Status code: " + response.statusCode());
             }
-        });
+        }).doOnError(e -> log.error("Error occurred while fetching car details for id: {}", id, e));
     }
+
 
     private String extractFolderIdFromUrl(String url) {
         Pattern pattern = Pattern.compile("https://drive\\.google\\.com/drive/folders/([a-zA-Z0-9_-]+)");
@@ -172,99 +173,6 @@ public class CarServiceImpl implements CarService {
     }
 
     @Override
-    public Mono<Object> getCarListsFilter(String accessToken, String comparator, String apiName, Object value) {
-        String url = "https://crm.zoho.com/crm/v2.1/Inventories/bulk";
-
-        String fieldId;
-        try {
-            fieldId = ApiNameToIdMapper.getIdForApiName(apiName);
-        } catch (IllegalArgumentException e) {
-            return Mono.error(e);
-        }
-        Filter filter = new Filter(comparator, new Field(apiName, fieldId), value);
-        String formData = "cvid=" + URLEncoder.encode("5741151000000625050", StandardCharsets.UTF_8);
-        ObjectMapper objectMapper = new ObjectMapper();
-        String filters;
-        try {
-            filters = URLEncoder.encode(objectMapper.writeValueAsString(filter), StandardCharsets.UTF_8);
-        } catch (JsonProcessingException e) {
-            return Mono.error(new RuntimeException("Failed to encode filter JSON", e));
-        }
-        formData += "&filters=" + filters;
-
-        final String finalUrl = url;
-        final String finalAccessToken = accessToken;
-        final String finalFormData = formData;
-
-        return Mono.fromCallable(() -> {
-            try {
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(finalUrl))
-                        .header("Authorization", "Zoho-oauthtoken " + finalAccessToken)
-                        .header("Content-Type", "application/x-www-form-urlencoded")
-                        .POST(HttpRequest.BodyPublishers.ofString(finalFormData))
-                        .build();
-
-                HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() == 200) {
-                    Map<String, Object> jsonResponse = objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
-                    List<Map<String, Object>> data = (List<Map<String, Object>>) jsonResponse.get("data");
-                    HashMap<String, String> hashMap = new HashMap<>();
-                    hashMap.put("5741151000001402995","5741151000001402995");
-                    hashMap.put("5741151000006366228","5741151000006366228");
-                    hashMap.put("5741151000008823014","5741151000008823014");
-                    hashMap.put("5741151000009020281","5741151000009020281");
-                    hashMap.put("5741151000009320063","5741151000009320063");
-                    hashMap.put("5741151000015258386","5741151000015258386");
-                    hashMap.put("5741151000019764378","5741151000019764378");
-                    hashMap.put("5741151000021696078","5741151000021696078");
-                    hashMap.put("5741151000022850752","5741151000022850752");
-                    List<CarListingResponse> carListings = new ArrayList<>();
-                    for (Map<String, Object> carData : data) {
-                        String id= (String) carData.get("id");
-                        String photoUrl = (String) carData.get("Photo_URL");
-                        if(hashMap.get(id)!=null) {
-                            if (photoUrl != null && !photoUrl.isEmpty()) {
-                                String folderId = extractFolderIdFromUrl(photoUrl);
-                                List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
-                                List<String> imageUrls = new ArrayList<>();
-                                List<String> otherImageUrls = new ArrayList<>();
-
-                                for (com.google.api.services.drive.model.File file : imageFiles) {
-                                    String webViewLink = file.getWebViewLink();
-                                    if (isPredefinedUrl(webViewLink)) {
-                                        imageUrls.add(webViewLink);
-                                    } else {
-                                        otherImageUrls.add(webViewLink);
-                                    }
-                                }
-                                imageUrls.addAll(imageUrls.size(), otherImageUrls);
-                                carListings.add(new CarListingResponse(carData, imageUrls));
-                            } else {
-                                log.warn("No photo URL found in car data");
-                            }
-                        }
-                    }
-
-                    if (carListings.isEmpty()) {
-                        log.warn("No car data found in response");
-                        throw new RuntimeException("No car data found in response");
-                    }
-
-                    log.info("Successfully fetched {} car listings", carListings.size());
-                    return carListings;
-                } else {
-                    log.error("Failed to fetch data. Status code: {}", response.statusCode());
-                    throw new RuntimeException("Failed to fetch data. Status code: " + response.statusCode());
-                }
-            } catch (IOException | InterruptedException e) {
-                LoggerFactory.getLogger(this.getClass()).error("HTTP request failed", e);
-                throw new RuntimeException("Failed to send HTTP request", e);
-            }
-        });
-    }
-
-    @Override
     public Mono<Object> getCarListsMultiFilter(String accessToken, FilterGroup filterGroup) throws Exception {
         String url = "https://crm.zoho.com/crm/v2.1/Inventories/bulk";
         String cvidParam = "cvid=" + URLEncoder.encode("5741151000000625050", StandardCharsets.UTF_8);
@@ -273,6 +181,7 @@ public class CarServiceImpl implements CarService {
 
         return Mono.fromCallable(() -> {
             try {
+                log.info("Creating HTTP request to fetch filtered car lists with access token.");
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(url))
                         .header("Authorization", "Zoho-oauthtoken " + accessToken)
@@ -280,79 +189,146 @@ public class CarServiceImpl implements CarService {
                         .POST(HttpRequest.BodyPublishers.ofString(formData))
                         .build();
 
+                log.info("Sending HTTP request to URL: {}", url);
                 HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+
                 if (response.statusCode() == 200) {
+                    log.info("Received successful response for filtered car lists.");
                     Map<String, Object> jsonResponse = objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
                     List<Map<String, Object>> data = (List<Map<String, Object>>) jsonResponse.get("data");
-                    HashMap<String, String> hashMap = new HashMap<>();
-                    hashMap.put("5741151000001402995", "5741151000001402995");
-                    hashMap.put("5741151000006366228", "5741151000006366228");
-                    hashMap.put("5741151000008823014", "5741151000008823014");
-                    hashMap.put("5741151000009020281", "5741151000009020281");
-                    hashMap.put("5741151000009320063", "5741151000009320063");
-                    hashMap.put("5741151000015258386", "5741151000015258386");
-                    hashMap.put("5741151000019764378", "5741151000019764378");
-                    hashMap.put("5741151000021696078", "5741151000021696078");
-                    hashMap.put("5741151000022850752", "5741151000022850752");
 
-                    List<CarListingResponse> matchingCarListings = new ArrayList<>();
-                    List<CarListingResponse> nonMatchingCarListings = new ArrayList<>();
-
+                    List<CarListingResponse> carListings = new ArrayList<>();
                     for (Map<String, Object> carData : data) {
-                        String id = (String) carData.get("id");
-                        String photoUrl = (String) carData.get("Photo_URL");
+                        String photoUrl = (String) carData.get("Photo_URL_for_Reseller");
 
-                        if (hashMap.containsKey(id)) {
-                            if (photoUrl != null && !photoUrl.isEmpty()) {
+                        if (photoUrl != null && !photoUrl.isEmpty()) {
+                            try {
                                 String folderId = extractFolderIdFromUrl(photoUrl);
+
                                 List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
+
+                                // Sort files by name
+                                imageFiles.sort(Comparator.comparing(com.google.api.services.drive.model.File::getName));
+
                                 List<String> imageUrls = new ArrayList<>();
-                                List<String> otherImageUrls = new ArrayList<>();
 
                                 for (com.google.api.services.drive.model.File file : imageFiles) {
                                     String webViewLink = file.getWebViewLink();
-                                    if (isPredefinedUrl(webViewLink)) {
-                                        imageUrls.add(webViewLink);
-                                    } else {
-                                        otherImageUrls.add(webViewLink);
-                                    }
+                                    imageUrls.add(webViewLink);
                                 }
-                                imageUrls.addAll(imageUrls.size(), otherImageUrls);
-                                matchingCarListings.add(new CarListingResponse(carData, imageUrls));
-                            } else {
-                                log.warn("No photo URL found in car data");
+
+                                log.debug("Added {} image URLs for folder ID: {}", imageUrls.size(), folderId);
+                                carListings.add(new CarListingResponse(carData, imageUrls));
+                            } catch (Exception e) {
+                                log.error("Error retrieving images for photo URL: {}", photoUrl, e);
                             }
                         } else {
-                            nonMatchingCarListings.add(new CarListingResponse(carData, new ArrayList<>()));
+                            log.warn("No photo URL found in car data: {}", carData);
+                            carListings.add(new CarListingResponse(carData, new ArrayList<>()));
                         }
                     }
 
-                    if (matchingCarListings.isEmpty() && nonMatchingCarListings.isEmpty()) {
-                        log.warn("No car data found in response");
-                        throw new RuntimeException("No car data found in response");
+                    if (carListings.isEmpty()) {
+                        log.warn("No car data found in response.");
+                        throw new RuntimeException("No car data found in response.");
                     }
 
-                    List<CarListingResponse> carListings = new ArrayList<>(matchingCarListings);
-                    carListings.addAll(nonMatchingCarListings);
-
-                    log.info("Successfully fetched {} car listings", carListings.size());
+                    log.info("Successfully fetched {} car listings.", carListings.size());
                     return carListings;
                 } else {
                     log.error("Failed to fetch data. Status code: {}", response.statusCode());
                     throw new RuntimeException("Failed to fetch data. Status code: " + response.statusCode());
                 }
             } catch (IOException | InterruptedException e) {
-                String errorMessage = "Failed to send HTTP request";
-                LoggerFactory.getLogger(this.getClass()).error(errorMessage, e);
-                // You can rethrow the caught exception with a more descriptive RuntimeException
-                throw new RuntimeException(errorMessage, e);
+                log.error("Failed to send HTTP request", e);
+                throw new RuntimeException("Failed to send HTTP request", e);
+            }
+        });
+    }
+
+
+    @Override
+    public Mono<List<CarListingResponse>> getCarListsWithoutImages(String accessToken, Integer page, Integer perPage) {
+        String url = "https://crm.zoho.com/crm/v2.2/Inventories/bulk?page=" + page + "&per_page=" + perPage;
+
+        return Mono.fromCallable(() -> {
+            log.info("Creating HTTP request to fetch car listings.");
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Zoho-oauthtoken " + accessToken)
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .build();
+
+            log.info("Sending HTTP request to URL: {}", url);
+            HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                log.info("Received successful response from Zoho CRM.");
+                Map<String, Object> carDetails = objectMapper.readValue(response.body(), Map.class);
+                List<Map<String, Object>> data = (List<Map<String, Object>>) carDetails.get("data");
+
+                List<CarListingResponse> carListingResponses = new ArrayList<>();
+                for (Map<String, Object> carData : data) {
+                    CarListingResponse carListingResponse = new CarListingResponse(carData, new ArrayList<>());
+                    carListingResponses.add(carListingResponse);
+                    log.debug("Added car listing with ID: {}", carData.get("id"));
+                }
+
+                log.info("Total car listings fetched: {}", carListingResponses.size());
+                return carListingResponses;
+            } else {
+                log.error("Failed to fetch data. Status code: {}", response.statusCode());
+                throw new RuntimeException("Failed to fetch data. Status code: " + response.statusCode());
             }
         });
     }
 
     @Override
-    public Mono<List<CarListingResponse>> getCarListsWithoutImages(String accessToken) {
-        String url = "https://crm.zoho.com/crm/v2.2/Inventories/bulk?";
+    public Mono<List<String>> getCarImages(List<String> photoUrls) {
+        return Flux.fromIterable(photoUrls)
+                .flatMap(photoUrl -> Mono.fromCallable(() -> {
+                    List<String> imageUrls = new ArrayList<>();
+
+                    if (photoUrl != null && !photoUrl.isEmpty()) {
+                        try {
+                            log.info("Processing photo URL: {}", photoUrl);
+
+                            String folderId = extractFolderIdFromUrl(photoUrl);
+                            log.info("Extracted folder ID: {}", folderId);
+
+                            List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
+
+                            // Sort files by name
+                            imageFiles.sort(Comparator.comparing(com.google.api.services.drive.model.File::getName));
+
+                            for (com.google.api.services.drive.model.File file : imageFiles) {
+                                String webViewLink = file.getWebViewLink();
+                                imageUrls.add(webViewLink);
+                                log.debug("Added image URL: {}", webViewLink);
+                            }
+
+                            log.info("Total images retrieved from folder {}: {}", folderId, imageFiles.size());
+
+                        } catch (Exception e) {
+                            log.error("Error processing photo URL: {}", photoUrl, e);
+                        }
+                    } else {
+                        log.warn("Empty or null photo URL: {}", photoUrl);
+                    }
+
+                    return imageUrls;
+                }))
+                .collectList()
+                .flatMap(imageUrlsList -> {
+                    List<String> allImageUrls = imageUrlsList.stream().flatMap(List::stream).collect(Collectors.toList());
+                    log.info("Total images retrieved: {}", allImageUrls.size());
+                    return Mono.just(allImageUrls);
+                });
+    }
+
+    @Override
+    public Mono<CarCountResponse> getTotalCount(String accessToken) {
+        String url = "https://crm.zoho.com/crm/v2.2/Inventories/actions/count?approved=both&cvid=5741151000000625050&home_converted_currency=true&formatted_currency=true";
 
         return Mono.fromCallable(() -> {
             HttpRequest request = HttpRequest.newBuilder()
@@ -363,83 +339,17 @@ public class CarServiceImpl implements CarService {
 
             HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
-                Map<String, Object> carDetails = objectMapper.readValue(response.body(), Map.class);
-                List<Map<String, Object>> data = (List<Map<String, Object>>) carDetails.get("data");
-
-                // IDs to prioritize
-                Set<String> prioritizedIds = new HashSet<>(Arrays.asList(
-                        "5741151000001402995", "5741151000006366228", "5741151000008823014",
-                        "5741151000009020281", "5741151000009320063", "5741151000015258386",
-                        "5741151000019764378", "5741151000021696078", "5741151000022850752"
-                ));
-
-                List<CarListingResponse> prioritizedCarListings = new ArrayList<>();
-                List<CarListingResponse> otherCarListings = new ArrayList<>();
-
-                for (Map<String, Object> carData : data) {
-                    String id = (String) carData.get("id");
-                    CarListingResponse carListingResponse = new CarListingResponse(carData, new ArrayList<>());
-
-                    if (prioritizedIds.contains(id)) {
-                        prioritizedCarListings.add(carListingResponse);
-                    } else {
-                        otherCarListings.add(carListingResponse);
-                    }
-                }
-
-                List<CarListingResponse> carListingResponses = new ArrayList<>(prioritizedCarListings);
-                carListingResponses.addAll(otherCarListings);
-
-                return carListingResponses;
+                log.info("Received successful response from Zoho CRM.");
+                String responseBody = response.body();
+                log.info("Response body: {}", responseBody); // Log response body for debugging
+                CarCountResponse carCountResponse = objectMapper.readValue(responseBody, CarCountResponse.class);
+                return carCountResponse;
             } else {
+                log.error("Failed to fetch data. Status code: {}", response.statusCode());
                 throw new RuntimeException("Failed to fetch data. Status code: " + response.statusCode());
             }
         });
     }
-
-
-    @Override
-    public Mono<List<String>> getCarImages(List<String> photoUrls) {
-        return Flux.fromIterable(photoUrls)
-                .flatMap(photoUrl -> {
-                    return Mono.fromCallable(() -> {
-                        List<String> imageUrls = new ArrayList<>();
-
-                        if (photoUrl != null && !photoUrl.isEmpty()) {
-                            try {
-                                String folderId = extractFolderIdFromUrl(photoUrl);
-                                log.info("Extracted folder ID: " + folderId);
-
-                                List<com.google.api.services.drive.model.File> imageFiles = googleService.retrieveImageFiles(folderId);
-                                List<String> predefinedImageUrls = new ArrayList<>();
-                                List<String> otherImageUrls = new ArrayList<>();
-
-                                for (com.google.api.services.drive.model.File file : imageFiles) {
-                                    String webViewLink = file.getWebViewLink();
-                                    if (isPredefinedUrl(webViewLink)) {
-                                        predefinedImageUrls.add(webViewLink);
-                                    } else {
-                                        otherImageUrls.add(webViewLink);
-                                    }
-                                }
-
-                                predefinedImageUrls.addAll(otherImageUrls);
-                                imageUrls.addAll(predefinedImageUrls);
-
-                            } catch (Exception e) {
-                                log.error("Error processing photo URL: " + photoUrl, e);
-                            }
-                        } else {
-                            log.warn("Empty or null photo URL: " + photoUrl);
-                        }
-
-                        return imageUrls;
-                    });
-                })
-                .collectList()  // Collect all lists of imageUrls into a single List<List<String>>
-                .flatMap(imageUrlsList -> Mono.just(imageUrlsList.stream().flatMap(List::stream).collect(Collectors.toList())));
-    }
-
 
     private String prepareFiltersParameter(FilterGroup filterGroup) throws Exception {
         FilterGroup newFilterGroup = new FilterGroup();
@@ -458,50 +368,6 @@ public class CarServiceImpl implements CarService {
         ObjectMapper objectMapper = new ObjectMapper();
         String json = objectMapper.writeValueAsString(newFilterGroup);
         return URLEncoder.encode(json, StandardCharsets.UTF_8);
-    }
-
-    private boolean isPredefinedUrl(String url) {
-        Set<String> predefinedUrls = new HashSet<>(Arrays.asList(
-                "https://drive.google.com/file/d/1BVCemUfgPlz3kLF42vqLiEuIohA_ETbW/view?usp=drivesdk",
-                "https://drive.google.com/file/d/134NvO5G1hXwMoRgWRNuY2TQh9yeAUSKw/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1XMRhhYXIL0rtgzWlp3UWchkdY8SeoYhW/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1CVtSw5dPOQ-Ot7a-j8ykGDTkAJCSv6Bf/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1JaqSV-S11zGq2SdJH3I_v8HWIyNXwi9g/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1glXEY2Y5MXoKf6uHYrKS0O3rGdCsWchO/view?usp=drivesdk",
-                "https://drive.google.com/file/d/159vbFADpUSlGl9qTPbel6fzH9kkBOVkx/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1CxnTCw0DWIeH3S7UYduxs0UjguBlqC9G/view?usp=drivesdk",
-                "https://drive.google.com/file/d/12kI0raDiV4x2-ipJpdsgr33sgMHgsqFD/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1zHAm5lKwIhhkfh0I1XuDMy0LvEyH5oNs/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1-wZEpwdCfhFwDxy0dyYqJvlsguPI0pKE/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1UFIXtR55QiRxurtsrUfvzOhONfIIObOs/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1doz4E8zpPoAQ4czidOxs3OtocSgvBg_V/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1noN4mTHg0wTO0TRlH0CQwdjMpG43MQ0a/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1ZTguObBHC4dfO2MBEbKdjFS8utmP13n5/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1Em2S52JiThb92sosLp8Z5h54T0TFpUDd/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1u5rCJoxF7FGvVL_45G8_I_4ti1Jt2bUb/view?usp=drivesdk",
-                "https://drive.google.com/file/d/16GA5wP3EIcX2GMOSI7N4A49CQB9QtPvx/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1t6EGB1LCmwzGD8_niFpbbiqJc5fRjqm7/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1-AS78WVqYCOoPfZWOkg13SjiuZDBxqLx/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1NvJV7X0RPztP8RukENG40rUdn15-hDmV/view?usp=drivesdk",
-                "https://drive.google.com/file/d/10l3jdGjJtJS3_lVmaI8NJ92zXBeFPSJ9/view?usp=drivesdk",
-                "https://drive.google.com/file/d/102yCxwxQnozLO76nZEGM488QR5VpIGwb/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1jB5D39tVSnBNIiFJcDWtQaKzob9zHDBe/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1kEWiHYAjnRMSDCw9zClC_348JyalzvyP/view?usp=drivesdk",
-                "https://drive.google.com/file/d/17rM8zQn9WhMi7cI4Gao73tkaX6l3XfeD/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1hICgBJK6_Ct1nFh4Ysmh_ZiGNQjo7NU8/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1Papj9tdg1DV86WXixhj403BnoAGnhiJf/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1bp-y4tcyIBNCcMQUnziVTpoosgQFHzxi/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1_F-b6T_ZQU3ehRKKTWVSiFf69AsQLaWO/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1b3qsxI9l9FlZ2xTGw_cpw9fSODIzo6up/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1DLPP5KRkZSscTAfrsK6PB8lK4pgqVbBg/view?usp=drivesdk",
-                "https://drive.google.com/file/d/18biQ0orskYT_rflpvFR205012RkLk3sX/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1uT5EAAVNIyr8irl-uaSpLcaQkEk4HBf9/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1lPEY3seVbTYLJ7cb1HSDK6_93CvxVR_r/view?usp=drivesdk",
-                "https://drive.google.com/file/d/10qiIwy-86lVg2Eg4PqBMwcINr5lXFiEi/view?usp=drivesdk",
-                "https://drive.google.com/file/d/1_vK-v9qLWtFMbgj3-8zhNATF2V3VkAh7/view?usp=drivesdk"
-        ));
-
-        return predefinedUrls.contains(url);
     }
 }
 
