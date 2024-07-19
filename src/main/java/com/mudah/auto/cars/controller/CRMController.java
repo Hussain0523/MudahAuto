@@ -1,6 +1,7 @@
 package com.mudah.auto.cars.controller;
 
 import com.mudah.auto.cars.payload.CarListingResponse;
+import com.mudah.auto.cars.service.CarListingService;
 import com.mudah.auto.cars.service.CarService;
 import com.mudah.auto.cars.service.dto.FilterGroup;
 import org.slf4j.LoggerFactory;
@@ -18,13 +19,16 @@ public class CRMController {
 
     private final CarService carService;
 
-    public CRMController(CarService carService) {
+    private final CarListingService carListingService;
+
+    public CRMController(CarService carService, CarListingService carListingService) {
         this.carService = carService;
+        this.carListingService = carListingService;
     }
 
     @PostMapping("/carLists")
     public Mono<ResponseEntity<List<CarListingResponse>>> getCarLists(@RequestParam String accessToken) {
-        return carService.getCarLists(accessToken)
+        return carListingService.getCarLists(accessToken)
                 .map(carLists -> ResponseEntity.ok(carLists))
                 .onErrorReturn(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
     }

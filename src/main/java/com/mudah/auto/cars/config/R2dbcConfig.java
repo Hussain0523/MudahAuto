@@ -34,6 +34,7 @@ public class R2dbcConfig extends AbstractR2dbcConfiguration {
         if ("create".equalsIgnoreCase(dbConfig)) {
             databasePopulator.addPopulators(new ResourceDatabasePopulator(new ClassPathResource("DropTables/DropTables.sql")));
             databasePopulator.addPopulators(new ResourceDatabasePopulator(new ClassPathResource("Tables/ActionToken.sql")));
+            databasePopulator.addPopulators(new ResourceDatabasePopulator(new ClassPathResource("Tables/Car.sql")));
         } else if ("update".equalsIgnoreCase(dbConfig)) {
             databasePopulator.addPopulators(new ResourceDatabasePopulator(new ClassPathResource("UpdateTables/UpdateTables.sql")));
         }

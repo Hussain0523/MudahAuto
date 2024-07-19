@@ -8,8 +8,6 @@ import java.util.List;
 
 public interface CarService {
 
-    Mono<List<CarListingResponse>> getCarLists(String accessToken);
-
     Mono<CarListingResponse> getCarDetails(String id , String accessToken);
 
     Mono<Object> getCarListsFilter(String accessToken, String comparator, String apiName, Object value);
